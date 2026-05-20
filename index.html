@@ -58,7 +58,6 @@
   .conflict-warn { font-size: 9px; color: #d4a017; font-weight: 600; text-align: right; margin-top: 1px; }
   .conflict-summary { margin-top: 16px; padding: 12px 16px; background: #FFF8E1; border-radius: 10px; border: 1px solid #FFE082; font-size: 13px; }
 
-  /* List view */
   .list-container { background: #fff; border-radius: 12px; box-shadow: 0 2px 20px rgba(0,0,0,0.06); overflow: hidden; }
   .list-header { padding: 16px 20px; border-bottom: 1px solid #eee; }
   .list-header h3 { font-size: 16px; font-weight: 600; }
@@ -72,7 +71,6 @@
   .list-detail { font-size: 12px; color: #888; }
   .list-tag { font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
 
-  /* Modal */
   .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); animation: fadeIn 0.15s ease; }
   .modal { background: #fff; border-radius: 16px; padding: 32px; width: 90%; max-width: 520px; box-shadow: 0 24px 80px rgba(0,0,0,0.2); animation: slideUp 0.2s ease; max-height: 90vh; overflow-y: auto; }
   .modal h3 { margin-bottom: 20px; font-size: 18px; font-weight: 700; }
@@ -86,7 +84,6 @@
   .btn-save { flex: 2; padding: 10px; border-radius: 8px; border: none; background: #1a1a2e; color: #fff; font-weight: 600; cursor: pointer; font-size: 14px; font-family: inherit; }
   .btn-save:hover { background: #2d2d4e; }
 
-  /* Settings */
   .settings-tabs { display: flex; gap: 4px; background: #f0f0f4; border-radius: 8px; padding: 3px; margin-bottom: 20px; }
   .settings-tab { flex: 1; border: none; border-radius: 6px; padding: 8px 12px; font-size: 13px; cursor: pointer; font-family: inherit; background: transparent; color: #555; font-weight: 500; transition: all 0.15s; text-align: center; }
   .settings-tab.active { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-weight: 600; color: #1a1a2e; }
@@ -106,6 +103,7 @@
   .settings-danger-zone { margin-top: 24px; padding-top: 18px; border-top: 1px solid #eee; }
   .btn-danger { padding: 8px 16px; border-radius: 8px; border: 1px solid #fdd; background: #fff5f5; color: #c0392b; font-weight: 500; cursor: pointer; font-size: 13px; font-family: inherit; transition: all 0.15s; }
   .btn-danger:hover { background: #fde8e8; border-color: #E74C3C; }
+  .error-box { background: #fff5f5; border: 1px solid #fdd; color: #8a1f11; border-radius: 10px; padding: 16px; margin-top: 16px; }
 </style>
 </head>
 <body>
@@ -119,6 +117,7 @@ import {
   onSnapshot,
   setDoc
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+
 const firebaseConfig = {
   apiKey: "PASTE_HERE",
   authDomain: "PASTE_HERE",
@@ -128,10 +127,6 @@ const firebaseConfig = {
   appId: "PASTE_HERE"
 };
 
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
-const calendarRef = doc(db, "ptoCalendars", "helpdesk"); 
-// ─── COLOR PALETTE for auto-assigning new people ───
 const COLOR_PALETTE = [
   { bg:"#E8F0FE", border:"#4285F4", text:"#1a56db" },
   { bg:"#FDE8E8", border:"#E74C3C", text:"#c0392b" },
@@ -147,26 +142,101 @@ const COLOR_PALETTE = [
   { bg:"#E8F5E9", border:"#43A047", text:"#2E7D32" },
   { bg:"#EFEBE9", border:"#795548", text:"#4E342E" },
   { bg:"#ECEFF1", border:"#546E7A", text:"#37474F" },
-  { bg:"#FBE9E7", border:"#FF5722", text:"#BF360C" },
+  { bg:"#FBE9E7", border:"#FF5722", text:"#BF360C" }
 ];
 
-// ─── DEFAULTS ───
 const DEFAULT_PEOPLE = [];
-
 const DEFAULT_ENTRIES = [];
-
 const DEFAULT_HOLIDAYS = [];
 
-// ─── STATE ───
-let people = DEFAULT_PEOPLE;
-let entries = DEFAULT_ENTRIES;
-let holidays = DEFAULT_HOLIDAYS;
+let firebaseApp;
+let db;
+let calendarRef;
+let unsubscribeCalendar;
+
+let people = [...DEFAULT_PEOPLE];
+let entries = [...DEFAULT_ENTRIES];
+let holidays = [...DEFAULT_HOLIDAYS];
 let isLoaded = false;
-let currentYear = new Date().getFullYear(), currentMonth = new Date().getMonth();
+let loadError = "";
+let currentYear = new Date().getFullYear();
+let currentMonth = new Date().getMonth();
 let filter = "All";
 let viewMode = "month";
 
+function isFirebaseConfigured() {
+  return Object.values(firebaseConfig).every(value => value && !String(value).includes("PASTE_HERE"));
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function escapeJs(value) {
+  return String(value ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function genId() {
+  return "e" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+
+function dateStr(y, m, d) {
+  return `${y}-${pad(m + 1)}-${pad(d)}`;
+}
+
+function fmtDate(ds) {
+  const d = new Date(ds + "T12:00:00");
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+function getColor(name) {
+  const p = people.find(x => x.name === name);
+  return p ? p.color : { bg: "#eee", border: "#999", text: "#333" };
+}
+
+function getPeopleNames() {
+  return people.map(p => p.name);
+}
+
+function getEntriesForDate(ds) {
+  let dayEntries = entries.filter(x => x.date === ds);
+  if (filter !== "All") dayEntries = dayEntries.filter(x => x.person === filter);
+  return dayEntries;
+}
+
+function getHolidaysForDate(ds) {
+  return holidays.filter(x => x.date === ds);
+}
+
+function getConflictDates() {
+  const byDate = {};
+  entries.forEach(entry => {
+    (byDate[entry.date] = byDate[entry.date] || []).push(entry);
+  });
+
+  const set = new Set();
+  Object.entries(byDate).forEach(([date, dayEntries]) => {
+    if (dayEntries.length >= 2) set.add(date);
+  });
+
+  return { set, byDate };
+}
+
 async function saveData() {
+  if (!calendarRef) {
+    alert("Firebase is not configured yet. Paste your Firebase config into index.html first.");
+    return;
+  }
+
   await setDoc(calendarRef, {
     people,
     entries,
@@ -175,88 +245,72 @@ async function saveData() {
   }, { merge: true });
 }
 
-function genId() { return "e" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
-function pad(n) { return String(n).padStart(2, "0"); }
-function dateStr(y, m, d) { return `${y}-${pad(m+1)}-${pad(d)}`; }
-function fmtDate(ds) {
-  const d = new Date(ds + "T12:00:00");
-  return d.toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric" });
-}
-function getColor(name) {
-  const p = people.find(x => x.name === name);
-  return p ? p.color : { bg:"#eee", border:"#999", text:"#333" };
-}
-function getPeopleNames() { return people.map(p => p.name); }
-
-function getEntriesForDate(ds) {
-  let e = entries.filter(x => x.date === ds);
-  if (filter !== "All") e = e.filter(x => x.person === filter);
-  return e;
-}
-function getHolidaysForDate(ds) { return holidays.filter(x => x.date === ds); }
-
-function getConflictDates() {
-  const byDate = {};
-  entries.forEach(e => { (byDate[e.date] = byDate[e.date] || []).push(e); });
-  const set = new Set();
-  Object.entries(byDate).forEach(([d, arr]) => { if (arr.length >= 2) set.add(d); });
-  return { set, byDate };
-}
-
-// ─── RENDER ───
 function render() {
- function render() {
+  const app = document.getElementById("app");
 
-  if (!isLoaded) {
-    document.getElementById("app").innerHTML = `
-      <div class="container">
-        <h1>Help Desk PTO</h1>
-        <p>Loading shared calendar...</p>
+  if (loadError) {
+    app.innerHTML = `
+      <div class="header">
+        <div>
+          <h1>Help Desk PTO</h1>
+          <p>Team time-off calendar</p>
+        </div>
+      </div>
+      <div class="error-box">
+        <strong>Setup needed</strong><br>
+        ${escapeHtml(loadError)}
       </div>
     `;
     return;
   }
 
-  const app = document.getElementById("app");
+  if (!isLoaded) {
+    app.innerHTML = `
+      <div class="header">
+        <div>
+          <h1>Help Desk PTO</h1>
+          <p>Loading shared calendar...</p>
+        </div>
+      </div>
+    `;
+    return;
+  }
 
-  // existing rendering logic...
-}
-  const app = document.getElementById("app");
   const today = new Date();
-  const todayStr = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
+  const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
   const { set: conflictDates, byDate } = getConflictDates();
   const names = getPeopleNames();
 
   let html = `
     <div class="header">
       <div>
-        <h1>🗓 Help Desk PTO</h1>
+        <h1>Help Desk PTO</h1>
         <p>Team time-off calendar</p>
       </div>
       <div class="header-buttons">
-        <button class="btn-settings" onclick="openSettings()">⚙ Settings</button>
+        <button class="btn-settings" onclick="openSettings()">Settings</button>
         <button class="btn-add" onclick="openModal()">+ Add Time Off</button>
       </div>
     </div>
     <div class="toolbar">
       <div class="pill-group">
-        ${["All", ...names].map(p => {
-          const c = p !== "All" ? getColor(p) : null;
-          const activeStyle = filter===p && c ? "color:"+c.text : "";
-          return `<button class="pill${filter===p?" active":""}" onclick="setFilter('${p.replace(/'/g,"\\'")}')" style="${activeStyle}">${p}</button>`;
+        ${["All", ...names].map(personName => {
+          const c = personName !== "All" ? getColor(personName) : null;
+          const activeStyle = filter === personName && c ? `color:${c.text}` : "";
+          return `<button class="pill${filter === personName ? " active" : ""}" onclick="setFilter('${escapeJs(personName)}')" style="${activeStyle}">${escapeHtml(personName)}</button>`;
         }).join("")}
       </div>
       <div class="spacer"></div>
       <div class="pill-group">
-        <button class="pill${viewMode==="month"?" active":""}" onclick="setView('month')">Month</button>
-        <button class="pill${viewMode==="list"?" active":""}" onclick="setView('list')">List</button>
+        <button class="pill${viewMode === "month" ? " active" : ""}" onclick="setView('month')">Month</button>
+        <button class="pill${viewMode === "list" ? " active" : ""}" onclick="setView('list')">List</button>
       </div>
     </div>
   `;
 
   if (viewMode === "month") {
-    const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-    const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
     html += `
       <div class="month-nav">
@@ -266,7 +320,7 @@ function render() {
         <h2 class="month-title">${MONTHS[currentMonth]} ${currentYear}</h2>
       </div>
       <div class="cal-grid">
-        ${DOW.map(d => `<div class="cal-header">${d}</div>`).join("")}
+        ${DOW.map(day => `<div class="cal-header">${day}</div>`).join("")}
     `;
 
     const firstDay = new Date(currentYear, currentMonth, 1).getDay();
@@ -291,25 +345,26 @@ function render() {
       else if (isWeekend) cls += " weekend";
       if (hasConflict) cls += " conflict";
 
-      html += `<div class="${cls}" onclick="openModal(null,'${ds}')">`;
+      html += `<div class="${cls}" onclick="openModal(null, '${ds}')">`;
       html += `<div class="day-num${isToday ? " today" : ""}">${d}</div>`;
 
-      dayHolidays.forEach(h => {
-        html += `<div class="holiday-badge">🏢 ${h.name}</div>`;
+      dayHolidays.forEach(holiday => {
+        html += `<div class="holiday-badge">${escapeHtml(holiday.name)}</div>`;
       });
 
-      dayEntries.forEach(e => {
-        const c = getColor(e.person);
-        const isHalf = e.hours.toLowerCase().includes("1/2");
-        const isPartial = !e.hours.toLowerCase().includes("all day") && !isHalf;
-        html += `<div class="badge" style="background:${c.bg};border-left-color:${c.border};color:${c.text}" onclick="event.stopPropagation();openModal('${e.id}')">
-          ${e.person}${isHalf ? ' <span style="opacity:0.7;font-weight:400">· ½</span>' : ""}${isPartial ? ' <span style="opacity:0.7;font-weight:400">· partial</span>' : ""}${e.notes ? ' <span style="opacity:0.6">✦</span>' : ""}
-          <span class="delete" onclick="event.stopPropagation();deleteEntry('${e.id}')">✕</span>
+      dayEntries.forEach(entry => {
+        const c = getColor(entry.person);
+        const hours = String(entry.hours || "");
+        const isHalf = hours.toLowerCase().includes("1/2");
+        const isPartial = !hours.toLowerCase().includes("all day") && !isHalf;
+        html += `<div class="badge" style="background:${c.bg};border-left-color:${c.border};color:${c.text}" onclick="event.stopPropagation();openModal('${entry.id}')">
+          ${escapeHtml(entry.person)}${isHalf ? ' <span style="opacity:0.7;font-weight:400">· 1/2</span>' : ""}${isPartial ? ' <span style="opacity:0.7;font-weight:400">· partial</span>' : ""}${entry.notes ? ' <span style="opacity:0.6">note</span>' : ""}
+          <span class="delete" onclick="event.stopPropagation();deleteEntry('${entry.id}')">x</span>
         </div>`;
       });
 
       if (hasConflict && dayEntries.length >= 2) {
-        html += `<div class="conflict-warn">⚠ ${dayEntries.length} out</div>`;
+        html += `<div class="conflict-warn">Overlap: ${dayEntries.length} out</div>`;
       }
       html += `</div>`;
     }
@@ -321,19 +376,19 @@ function render() {
     }
     html += `</div>`;
 
-    const prefix = `${currentYear}-${pad(currentMonth+1)}`;
-    const monthConflicts = [...conflictDates].filter(d => d.startsWith(prefix));
+    const prefix = `${currentYear}-${pad(currentMonth + 1)}`;
+    const monthConflicts = [...conflictDates].filter(date => date.startsWith(prefix));
     if (filter === "All" && monthConflicts.length > 0) {
-      html += `<div class="conflict-summary"><strong>⚠ Overlap days this month:</strong> `;
-      monthConflicts.forEach(d => {
-        const n = (byDate[d] || []).map(e => e.person).join(", ");
-        html += `<span style="margin-right:12px">${fmtDate(d)} (${n})</span>`;
+      html += `<div class="conflict-summary"><strong>Overlap days this month:</strong> `;
+      monthConflicts.forEach(date => {
+        const namesOut = (byDate[date] || []).map(entry => entry.person).join(", ");
+        html += `<span style="margin-right:12px">${fmtDate(date)} (${escapeHtml(namesOut)})</span>`;
       });
       html += `</div>`;
     }
   } else {
     const upcoming = entries
-      .filter(e => e.date >= todayStr && (filter === "All" || e.person === filter))
+      .filter(entry => entry.date >= todayStr && (filter === "All" || entry.person === filter))
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(0, 20);
 
@@ -341,18 +396,19 @@ function render() {
     if (upcoming.length === 0) {
       html += `<div class="list-empty">No upcoming entries</div>`;
     }
-    upcoming.forEach(e => {
-      const c = getColor(e.person);
-      const hol = holidays.find(h => h.date === e.date);
-      html += `<div class="list-row" onclick="openModal('${e.id}')">
+
+    upcoming.forEach(entry => {
+      const c = getColor(entry.person);
+      const holiday = holidays.find(h => h.date === entry.date);
+      html += `<div class="list-row" onclick="openModal('${entry.id}')">
         <div class="list-bar" style="background:${c.border}"></div>
-        <div class="list-date">${fmtDate(e.date)}</div>
+        <div class="list-date">${fmtDate(entry.date)}</div>
         <div class="list-info">
-          <div class="list-name" style="color:${c.text}">${e.person}</div>
-          <div class="list-detail">${e.hours}${e.notes ? " · " + e.notes : ""}</div>
+          <div class="list-name" style="color:${c.text}">${escapeHtml(entry.person)}</div>
+          <div class="list-detail">${escapeHtml(entry.hours)}${entry.notes ? " · " + escapeHtml(entry.notes) : ""}</div>
         </div>
-        ${hol ? `<span class="list-tag" style="background:#FFF8E1;color:#7B6B00">Holiday</span>` : ""}
-        ${conflictDates.has(e.date) ? `<span style="font-size:10px;color:#d4a017;font-weight:600">⚠</span>` : ""}
+        ${holiday ? `<span class="list-tag" style="background:#FFF8E1;color:#7B6B00">Holiday</span>` : ""}
+        ${conflictDates.has(entry.date) ? `<span style="font-size:10px;color:#d4a017;font-weight:600">Overlap</span>` : ""}
       </div>`;
     });
     html += `</div>`;
@@ -361,22 +417,50 @@ function render() {
   app.innerHTML = html;
 }
 
-// ─── ACTIONS ───
-function setFilter(f) { filter = f; render(); }
-function setView(v) { viewMode = v; render(); }
-function prevMonth() { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } render(); }
-function nextMonth() { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; } render(); }
-function goToday() { const t = new Date(); currentYear = t.getFullYear(); currentMonth = t.getMonth(); render(); }
+function setFilter(nextFilter) {
+  filter = nextFilter;
+  render();
+}
+
+function setView(nextView) {
+  viewMode = nextView;
+  render();
+}
+
+function prevMonth() {
+  currentMonth--;
+  if (currentMonth < 0) {
+    currentMonth = 11;
+    currentYear--;
+  }
+  render();
+}
+
+function nextMonth() {
+  currentMonth++;
+  if (currentMonth > 11) {
+    currentMonth = 0;
+    currentYear++;
+  }
+  render();
+}
+
+function goToday() {
+  const today = new Date();
+  currentYear = today.getFullYear();
+  currentMonth = today.getMonth();
+  render();
+}
 
 function deleteEntry(id) {
   if (!confirm("Remove this time-off entry?")) return;
-  entries = entries.filter(e => e.id !== id);
-  saveData();
+  entries = entries.filter(entry => entry.id !== id);
+  saveData().catch(showSaveError);
 }
 
 function openModal(editId, defaultDate) {
-  const entry = editId ? entries.find(e => e.id === editId) : null;
-  const isEdit = !!entry;
+  const entry = editId ? entries.find(item => item.id === editId) : null;
+  const isEdit = Boolean(entry);
   const names = getPeopleNames();
 
   if (names.length === 0) {
@@ -386,7 +470,9 @@ function openModal(editId, defaultDate) {
 
   const overlay = document.createElement("div");
   overlay.className = "modal-bg";
-  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.onclick = event => {
+    if (event.target === overlay) overlay.remove();
+  };
 
   const defaultVal = defaultDate || dateStr(currentYear, currentMonth, 1);
 
@@ -396,7 +482,7 @@ function openModal(editId, defaultDate) {
       <div class="form-group">
         <label class="form-label">Person</label>
         <select id="m-person" class="form-input">
-          ${names.map(p => `<option value="${p}"${entry && entry.person === p ? " selected" : ""}>${p}</option>`).join("")}
+          ${names.map(name => `<option value="${escapeHtml(name)}"${entry && entry.person === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
         </select>
       </div>
       ${isEdit ? `
@@ -425,12 +511,12 @@ function openModal(editId, defaultDate) {
       <div class="form-group">
         <label class="form-label">Hours</label>
         <select id="m-hours" class="form-input">
-          ${["All Day","1/2 Day AM","1/2 Day PM","Other"].map(h => `<option value="${h}"${entry && entry.hours === h ? " selected" : ""}>${h}</option>`).join("")}
+          ${["All Day", "1/2 Day AM", "1/2 Day PM", "Other"].map(hours => `<option value="${hours}"${entry && entry.hours === hours ? " selected" : ""}>${hours}</option>`).join("")}
         </select>
       </div>
       <div class="form-group">
         <label class="form-label">Notes (optional)</label>
-        <input id="m-notes" class="form-input" value="${entry ? (entry.notes||"") : ""}" placeholder="Working partial, coverage notes, etc.">
+        <input id="m-notes" class="form-input" value="${entry ? escapeHtml(entry.notes || "") : ""}" placeholder="Working partial, coverage notes, etc.">
       </div>
       <div class="form-actions">
         <button class="btn-cancel" onclick="this.closest('.modal-bg').remove()">Cancel</button>
@@ -441,23 +527,28 @@ function openModal(editId, defaultDate) {
 
   document.body.appendChild(overlay);
 
-  if (entry && !["All Day","1/2 Day AM","1/2 Day PM","Other"].includes(entry.hours)) {
-    document.getElementById("m-hours").value = "Other";
-  }
-
-  // Date range preview (new entries only)
   if (!isEdit) {
-    function updateRangeInfo() {
+    const updateRangeInfo = () => {
       const start = document.getElementById("m-date-start").value;
       const end = document.getElementById("m-date-end").value;
       const skip = document.getElementById("m-skip-weekends").checked;
       const info = document.getElementById("m-range-info");
-      if (!start || !end) { info.textContent = ""; return; }
+      if (!start || !end) {
+        info.textContent = "";
+        return;
+      }
       const days = getDateRange(start, end, skip);
-      if (days.length === 0) { info.textContent = "No days in range"; return; }
-      if (days.length === 1) { info.textContent = "1 day: " + fmtDate(days[0]); return; }
-      info.textContent = days.length + " days: " + fmtDate(days[0]) + " → " + fmtDate(days[days.length-1]);
-    }
+      if (days.length === 0) {
+        info.textContent = "No days in range";
+        return;
+      }
+      if (days.length === 1) {
+        info.textContent = "1 day: " + fmtDate(days[0]);
+        return;
+      }
+      info.textContent = days.length + " days: " + fmtDate(days[0]) + " to " + fmtDate(days[days.length - 1]);
+    };
+
     document.getElementById("m-date-start").addEventListener("change", () => {
       const startVal = document.getElementById("m-date-start").value;
       const endEl = document.getElementById("m-date-end");
@@ -472,26 +563,30 @@ function openModal(editId, defaultDate) {
   document.getElementById("m-save").onclick = () => {
     const person = document.getElementById("m-person").value;
     const startDate = document.getElementById("m-date-start").value;
-    let hours = document.getElementById("m-hours").value;
+    const hours = document.getElementById("m-hours").value;
     const notes = document.getElementById("m-notes").value;
+
     if (!startDate) return;
 
     if (isEdit) {
-      const idx = entries.findIndex(e => e.id === entry.id);
+      const idx = entries.findIndex(item => item.id === entry.id);
       entries[idx] = { ...entries[idx], person, date: startDate, hours, notes };
     } else {
       const endEl = document.getElementById("m-date-end");
       const endDate = endEl ? endEl.value : startDate;
       const skip = document.getElementById("m-skip-weekends")?.checked ?? true;
       const days = getDateRange(startDate, endDate || startDate, skip);
-      if (days.length === 0) { alert("No days in selected range."); return; }
-      days.forEach(d => {
-        entries.push({ id: genId(), person, date: d, hours, notes });
+      if (days.length === 0) {
+        alert("No days in selected range.");
+        return;
+      }
+      days.forEach(date => {
+        entries.push({ id: genId(), person, date, hours, notes });
       });
     }
-    saveData();
+
+    saveData().catch(showSaveError);
     overlay.remove();
-    render();
   };
 }
 
@@ -500,45 +595,47 @@ function getDateRange(startStr, endStr, skipWeekends) {
   const start = new Date(startStr + "T12:00:00");
   const end = new Date(endStr + "T12:00:00");
   if (isNaN(start) || isNaN(end) || start > end) return dates;
+
   const cur = new Date(start);
   while (cur <= end) {
     const dow = cur.getDay();
     if (!skipWeekends || (dow !== 0 && dow !== 6)) {
-      dates.push(`${cur.getFullYear()}-${pad(cur.getMonth()+1)}-${pad(cur.getDate())}`);
+      dates.push(`${cur.getFullYear()}-${pad(cur.getMonth() + 1)}-${pad(cur.getDate())}`);
     }
     cur.setDate(cur.getDate() + 1);
   }
   return dates;
 }
 
-// ─── SETTINGS PANEL ───
 function openSettings() {
   let settingsTab = "people";
 
   const overlay = document.createElement("div");
   overlay.className = "modal-bg";
-  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.onclick = event => {
+    if (event.target === overlay) overlay.remove();
+  };
 
   function renderSettings() {
     const modal = overlay.querySelector(".modal");
     let html = `
-      <h3>⚙ Settings</h3>
+      <h3>Settings</h3>
       <div class="settings-tabs">
-        <button class="settings-tab${settingsTab==="people"?" active":""}" onclick="switchSettingsTab('people')">👥 Team Members</button>
-        <button class="settings-tab${settingsTab==="holidays"?" active":""}" onclick="switchSettingsTab('holidays')">🏢 Holidays</button>
-        <button class="settings-tab${settingsTab==="data"?" active":""}" onclick="switchSettingsTab('data')">💾 Data</button>
+        <button class="settings-tab${settingsTab === "people" ? " active" : ""}" onclick="switchSettingsTab('people')">Team Members</button>
+        <button class="settings-tab${settingsTab === "holidays" ? " active" : ""}" onclick="switchSettingsTab('holidays')">Holidays</button>
+        <button class="settings-tab${settingsTab === "data" ? " active" : ""}" onclick="switchSettingsTab('data')">Data</button>
       </div>
     `;
 
     if (settingsTab === "people") {
       html += `<p class="settings-section-note">Add or remove team members. Colors are assigned automatically.</p>`;
-      people.forEach((p, i) => {
-        const entryCount = entries.filter(e => e.person === p.name).length;
+      people.forEach((person, i) => {
+        const entryCount = entries.filter(entry => entry.person === person.name).length;
         html += `<div class="settings-item">
-          <div class="settings-color-dot" style="background:${p.color.bg};border-color:${p.color.border}"></div>
-          <div class="settings-item-name" style="color:${p.color.text}">${p.name}</div>
-          <div class="settings-item-detail">${entryCount} entr${entryCount===1?"y":"ies"}</div>
-          <button class="settings-item-btn" onclick="removePerson(${i})" title="Remove ${p.name}">✕</button>
+          <div class="settings-color-dot" style="background:${person.color.bg};border-color:${person.color.border}"></div>
+          <div class="settings-item-name" style="color:${person.color.text}">${escapeHtml(person.name)}</div>
+          <div class="settings-item-detail">${entryCount} entr${entryCount === 1 ? "y" : "ies"}</div>
+          <button class="settings-item-btn" onclick="removePerson(${i})" title="Remove ${escapeHtml(person.name)}">x</button>
         </div>`;
       });
       html += `
@@ -549,12 +646,11 @@ function openSettings() {
       `;
     } else if (settingsTab === "holidays") {
       html += `<p class="settings-section-note">Manage office holidays and early closures. These show in tan on the calendar.</p>`;
-      holidays.sort((a,b) => a.date.localeCompare(b.date)).forEach((h, i) => {
+      [...holidays].sort((a, b) => a.date.localeCompare(b.date)).forEach(holiday => {
         html += `<div class="settings-item">
-          <div style="font-size:18px;flex-shrink:0">🏢</div>
-          <div class="settings-item-name">${h.name}</div>
-          <div class="settings-item-detail">${fmtDate(h.date)}</div>
-          <button class="settings-item-btn" onclick="removeHoliday('${h.id}')" title="Remove">✕</button>
+          <div class="settings-item-name">${escapeHtml(holiday.name)}</div>
+          <div class="settings-item-detail">${fmtDate(holiday.date)}</div>
+          <button class="settings-item-btn" onclick="removeHoliday('${holiday.id}')" title="Remove">x</button>
         </div>`;
       });
       html += `
@@ -575,22 +671,20 @@ function openSettings() {
         </div>
       `;
     } else if (settingsTab === "data") {
-      html += `<p class="settings-section-note">Manage your calendar data. All data is stored in your browser's localStorage.</p>`;
+      html += `<p class="settings-section-note">Manage shared calendar data. Data is stored in Firebase Firestore.</p>`;
       html += `
         <div class="settings-item" style="cursor:pointer" onclick="exportData()">
-          <div style="font-size:18px">📤</div>
           <div class="settings-item-name">Export All Data</div>
           <div class="settings-item-detail">Download as JSON backup</div>
         </div>
         <div class="settings-item" style="cursor:pointer" onclick="document.getElementById('import-file').click()">
-          <div style="font-size:18px">📥</div>
           <div class="settings-item-name">Import Data</div>
           <div class="settings-item-detail">Restore from JSON backup</div>
           <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
         </div>
         <div class="settings-danger-zone">
           <p class="settings-section-note" style="color:#c0392b;font-weight:600">Danger Zone</p>
-          <button class="btn-danger" onclick="resetAllData()">🗑 Reset All Data to Defaults</button>
+          <button class="btn-danger" onclick="resetAllData()">Reset All Data to Defaults</button>
         </div>
       `;
     }
@@ -599,7 +693,6 @@ function openSettings() {
     modal.innerHTML = html;
   }
 
-  // Make tab switching available globally for this modal
   window.switchSettingsTab = function(tab) {
     settingsTab = tab;
     renderSettings();
@@ -613,49 +706,53 @@ function openSettings() {
 function addPerson() {
   const input = document.getElementById("s-new-person");
   const name = input.value.trim();
+
   if (!name) return;
-  if (people.find(p => p.name.toLowerCase() === name.toLowerCase())) {
+  if (people.find(person => person.name.toLowerCase() === name.toLowerCase())) {
     alert("That name already exists.");
     return;
   }
+
   const colorIdx = people.length % COLOR_PALETTE.length;
   people.push({ name, color: COLOR_PALETTE[colorIdx] });
-  saveData();
-  // Re-render settings
+  saveData().catch(showSaveError);
   window.switchSettingsTab("people");
 }
 
 function removePerson(idx) {
   const name = people[idx].name;
-  const entryCount = entries.filter(e => e.person === name).length;
+  const entryCount = entries.filter(entry => entry.person === name).length;
   let msg = `Remove ${name} from the team?`;
-  if (entryCount > 0) msg += `\n\nThis will also remove their ${entryCount} time-off entr${entryCount===1?"y":"ies"}.`;
+  if (entryCount > 0) msg += `\n\nThis will also remove their ${entryCount} time-off entr${entryCount === 1 ? "y" : "ies"}.`;
   if (!confirm(msg)) return;
+
   people.splice(idx, 1);
-  entries = entries.filter(e => e.person !== name);
+  entries = entries.filter(entry => entry.person !== name);
   if (filter === name) filter = "All";
-  saveData();
+  saveData().catch(showSaveError);
   window.switchSettingsTab("people");
-  render();
 }
 
 function addHoliday() {
   const name = document.getElementById("s-hol-name").value.trim();
   const date = document.getElementById("s-hol-date").value;
   const note = document.getElementById("s-hol-note").value.trim();
-  if (!name || !date) { alert("Please enter a name and date."); return; }
+
+  if (!name || !date) {
+    alert("Please enter a name and date.");
+    return;
+  }
+
   holidays.push({ id: genId(), date, name, note });
-  saveData();
+  saveData().catch(showSaveError);
   window.switchSettingsTab("holidays");
-  render();
 }
 
 function removeHoliday(id) {
   if (!confirm("Remove this holiday?")) return;
-  holidays = holidays.filter(h => h.id !== id);
-  saveData();
+  holidays = holidays.filter(holiday => holiday.id !== id);
+  saveData().catch(showSaveError);
   window.switchSettingsTab("holidays");
-  render();
 }
 
 function exportData() {
@@ -672,15 +769,16 @@ function exportData() {
 function importData(event) {
   const file = event.target.files[0];
   if (!file) return;
+
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
       const data = JSON.parse(e.target.result);
-      if (data.people) people = data.people;
-      if (data.entries) entries = data.entries;
-      if (data.holidays) holidays = data.holidays;
-      saveData();
-      alert("Data imported successfully!");
+      people = Array.isArray(data.people) ? data.people : people;
+      entries = Array.isArray(data.entries) ? data.entries : entries;
+      holidays = Array.isArray(data.holidays) ? data.holidays : holidays;
+      saveData().catch(showSaveError);
+      alert("Data imported successfully.");
       document.querySelector(".modal-bg")?.remove();
     } catch(err) {
       alert("Invalid file. Please use a JSON backup file.");
@@ -690,37 +788,83 @@ function importData(event) {
 }
 
 function resetAllData() {
-  if (!confirm("This will reset ALL data (people, entries, holidays) to the original defaults. Are you sure?")) return;
+  if (!confirm("This will reset all data to the original defaults. Are you sure?")) return;
   if (!confirm("Really sure? This cannot be undone.")) return;
-  people = JSON.parse(JSON.stringify(DEFAULT_PEOPLE));
-  entries = JSON.parse(JSON.stringify(DEFAULT_ENTRIES));
-  holidays = JSON.parse(JSON.stringify(DEFAULT_HOLIDAYS));
+
+  people = [...DEFAULT_PEOPLE];
+  entries = [...DEFAULT_ENTRIES];
+  holidays = [...DEFAULT_HOLIDAYS];
   filter = "All";
-  saveData();
+  saveData().catch(showSaveError);
   document.querySelector(".modal-bg")?.remove();
 }
 
-// ─── INIT ───
-onSnapshot(calendarRef, async (snapshot) => {
-  if (!snapshot.exists()) {
-    await setDoc(calendarRef, {
-      people: DEFAULT_PEOPLE,
-      entries: DEFAULT_ENTRIES,
-      holidays: DEFAULT_HOLIDAYS,
-      updatedAt: new Date().toISOString()
-    });
+function showSaveError(error) {
+  console.error(error);
+  alert("Could not save to Firebase. Check your Firebase config, Firestore rules, and browser console.");
+}
+
+function initFirebase() {
+  if (!isFirebaseConfigured()) {
+    loadError = "Replace the PASTE_HERE values in firebaseConfig with your real Firebase web app config, then redeploy to GitHub Pages.";
+    render();
     return;
   }
 
-  const data = snapshot.data();
+  try {
+    firebaseApp = initializeApp(firebaseConfig);
+    db = getFirestore(firebaseApp);
+    calendarRef = doc(db, "ptoCalendars", "helpdesk");
 
-  people = data.people || DEFAULT_PEOPLE;
-  entries = data.entries || DEFAULT_ENTRIES;
-  holidays = data.holidays || DEFAULT_HOLIDAYS;
+    unsubscribeCalendar = onSnapshot(calendarRef, async snapshot => {
+      if (!snapshot.exists()) {
+        await setDoc(calendarRef, {
+          people: DEFAULT_PEOPLE,
+          entries: DEFAULT_ENTRIES,
+          holidays: DEFAULT_HOLIDAYS,
+          updatedAt: new Date().toISOString()
+        });
+        return;
+      }
 
-  isLoaded = true;
-  render();
+      const data = snapshot.data();
+      people = Array.isArray(data.people) ? data.people : [...DEFAULT_PEOPLE];
+      entries = Array.isArray(data.entries) ? data.entries : [...DEFAULT_ENTRIES];
+      holidays = Array.isArray(data.holidays) ? data.holidays : [...DEFAULT_HOLIDAYS];
+      isLoaded = true;
+      render();
+    }, error => {
+      console.error(error);
+      loadError = "Firebase loaded, but Firestore access failed. Check your Firestore database, rules, and project config.";
+      render();
+    });
+  } catch (error) {
+    console.error(error);
+    loadError = "Firebase could not initialize. Check that your Firebase config values are correct.";
+    render();
+  }
+}
+
+Object.assign(window, {
+  setFilter,
+  setView,
+  prevMonth,
+  nextMonth,
+  goToday,
+  deleteEntry,
+  openModal,
+  openSettings,
+  addPerson,
+  removePerson,
+  addHoliday,
+  removeHoliday,
+  exportData,
+  importData,
+  resetAllData
 });
+
+render();
+initFirebase();
 </script>
 </body>
 </html>

@@ -166,10 +166,13 @@ let currentYear = new Date().getFullYear(), currentMonth = new Date().getMonth()
 let filter = "All";
 let viewMode = "month";
 
-function saveData() {
-  localStorage.setItem("pto-people", JSON.stringify(people));
-  localStorage.setItem("pto-entries", JSON.stringify(entries));
-  localStorage.setItem("pto-holidays", JSON.stringify(holidays));
+async function saveData() {
+  await setDoc(calendarRef, {
+    people,
+    entries,
+    holidays,
+    updatedAt: new Date().toISOString()
+  }, { merge: true });
 }
 
 function genId() { return "e" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
@@ -202,6 +205,22 @@ function getConflictDates() {
 
 // ─── RENDER ───
 function render() {
+ function render() {
+
+  if (!isLoaded) {
+    document.getElementById("app").innerHTML = `
+      <div class="container">
+        <h1>Help Desk PTO</h1>
+        <p>Loading shared calendar...</p>
+      </div>
+    `;
+    return;
+  }
+
+  const app = document.getElementById("app");
+
+  // existing rendering logic...
+}
   const app = document.getElementById("app");
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
@@ -353,7 +372,6 @@ function deleteEntry(id) {
   if (!confirm("Remove this time-off entry?")) return;
   entries = entries.filter(e => e.id !== id);
   saveData();
-  render();
 }
 
 function openModal(editId, defaultDate) {
@@ -662,7 +680,6 @@ function importData(event) {
       if (data.entries) entries = data.entries;
       if (data.holidays) holidays = data.holidays;
       saveData();
-      render();
       alert("Data imported successfully!");
       document.querySelector(".modal-bg")?.remove();
     } catch(err) {
@@ -680,12 +697,30 @@ function resetAllData() {
   holidays = JSON.parse(JSON.stringify(DEFAULT_HOLIDAYS));
   filter = "All";
   saveData();
-  render();
   document.querySelector(".modal-bg")?.remove();
 }
 
 // ─── INIT ───
-render();
+onSnapshot(calendarRef, async (snapshot) => {
+  if (!snapshot.exists()) {
+    await setDoc(calendarRef, {
+      people: DEFAULT_PEOPLE,
+      entries: DEFAULT_ENTRIES,
+      holidays: DEFAULT_HOLIDAYS,
+      updatedAt: new Date().toISOString()
+    });
+    return;
+  }
+
+  const data = snapshot.data();
+
+  people = data.people || DEFAULT_PEOPLE;
+  entries = data.entries || DEFAULT_ENTRIES;
+  holidays = data.holidays || DEFAULT_HOLIDAYS;
+
+  isLoaded = true;
+  render();
+});
 </script>
 </body>
 </html>

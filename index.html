@@ -112,6 +112,13 @@
 <div class="container" id="app"></div>
 
 <script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+import {
+  getFirestore,
+  doc,
+  onSnapshot,
+  setDoc
+} from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 // ─── COLOR PALETTE for auto-assigning new people ───
 const COLOR_PALETTE = [
   { bg:"#E8F0FE", border:"#4285F4", text:"#1a56db" },

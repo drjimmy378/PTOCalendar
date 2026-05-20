@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Help Desk PTO Calendar</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', 'Segoe UI', sans-serif; color: #1a1a2e; background: #f8f8fc; min-height: 100vh; }
+  @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: translateY(0) } }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+  .header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+  .header p { margin-top: 4px; font-size: 13px; color: #666; }
+  .header-buttons { display: flex; gap: 8px; }
+  .btn-add { background: #1a1a2e; color: #fff; border: none; border-radius: 10px; padding: 10px 20px; font-weight: 600; font-size: 14px; cursor: pointer; font-family: inherit; transition: background 0.15s; }
+  .btn-add:hover { background: #2d2d4e; }
+  .btn-settings { background: #fff; color: #555; border: 1px solid #ddd; border-radius: 10px; padding: 10px 16px; font-weight: 500; font-size: 14px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+  .btn-settings:hover { background: #f5f5f5; border-color: #bbb; }
+
+  .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .pill-group { display: flex; gap: 4px; background: #f0f0f4; border-radius: 8px; padding: 3px; flex-wrap: wrap; }
+  .pill { border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-family: inherit; background: transparent; color: #555; font-weight: 400; transition: all 0.15s; }
+  .pill.active { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-weight: 600; }
+  .spacer { flex: 1; }
+
+  .month-nav { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .nav-btn { border: 1px solid #ddd; background: #fff; border-radius: 8px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; color: #555; font-family: inherit; transition: background 0.1s; }
+  .nav-btn:hover { background: #f0f0f4; }
+  .nav-btn.today { font-size: 12px; width: auto; padding: 6px 14px; }
+  .month-title { font-size: 22px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #e0e0e8; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 20px rgba(0,0,0,0.06); }
+  .cal-header { background: #f8f8fc; padding: 8px 0; text-align: center; font-size: 11px; font-weight: 600; color: #888; letter-spacing: 0.8px; text-transform: uppercase; }
+  .cal-cell { background: #fff; padding: 6px 6px 4px; min-height: 90px; cursor: pointer; position: relative; transition: background 0.1s; }
+  .cal-cell:hover { background: #f0f0ff; }
+  .cal-cell.outside { background: #f2f2f6; cursor: default; }
+  .cal-cell.outside:hover { background: #f2f2f6; }
+  .cal-cell.holiday { background: #FFFDE7; }
+  .cal-cell.holiday:hover { background: #FFF9C4; }
+  .cal-cell.weekend { background: #fafafe; }
+  .cal-cell.weekend:hover { background: #f0f0ff; }
+  .cal-cell.conflict { border-top: 2px solid #FFB300; }
+  .day-num { font-size: 12px; font-weight: 500; margin-bottom: 3px; color: #444; }
+  .day-num.outside { color: #ccc; }
+  .day-num.today { background: #1a1a2e; color: #fff; font-weight: 700; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+
+  .badge { padding: 3px 6px; border-radius: 4px; font-size: 11px; cursor: pointer; margin-bottom: 2px; line-height: 1.3; position: relative; font-weight: 500; transition: transform 0.1s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 3px solid; }
+  .badge:hover { transform: scale(1.02); }
+  .badge .delete { position: absolute; right: 4px; top: 2px; opacity: 0; cursor: pointer; font-size: 10px; transition: opacity 0.15s; }
+  .badge:hover .delete { opacity: 0.5; }
+  .badge .delete:hover { opacity: 1; }
+
+  .holiday-badge { padding: 3px 6px; border-radius: 4px; font-size: 10px; margin-bottom: 2px; line-height: 1.3; font-weight: 600; letter-spacing: 0.2px; background: #FFF8E1; border-left: 3px solid #FFB300; color: #7B6B00; }
+  .conflict-warn { font-size: 9px; color: #d4a017; font-weight: 600; text-align: right; margin-top: 1px; }
+  .conflict-summary { margin-top: 16px; padding: 12px 16px; background: #FFF8E1; border-radius: 10px; border: 1px solid #FFE082; font-size: 13px; }
+
+  /* List view */
+  .list-container { background: #fff; border-radius: 12px; box-shadow: 0 2px 20px rgba(0,0,0,0.06); overflow: hidden; }
+  .list-header { padding: 16px 20px; border-bottom: 1px solid #eee; }
+  .list-header h3 { font-size: 16px; font-weight: 600; }
+  .list-empty { padding: 40px; text-align: center; color: #999; }
+  .list-row { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #f5f5f5; cursor: pointer; transition: background 0.1s; }
+  .list-row:hover { background: #fafafa; }
+  .list-bar { width: 4px; height: 36px; border-radius: 2px; }
+  .list-date { width: 90px; font-size: 12px; color: #888; font-family: 'JetBrains Mono', monospace; }
+  .list-info { flex: 1; }
+  .list-name { font-size: 14px; font-weight: 600; }
+  .list-detail { font-size: 12px; color: #888; }
+  .list-tag { font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+
+  /* Modal */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); animation: fadeIn 0.15s ease; }
+  .modal { background: #fff; border-radius: 16px; padding: 32px; width: 90%; max-width: 520px; box-shadow: 0 24px 80px rgba(0,0,0,0.2); animation: slideUp 0.2s ease; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 20px; font-size: 18px; font-weight: 700; }
+  .form-group { margin-bottom: 14px; }
+  .form-label { font-size: 12px; font-weight: 600; color: #666; margin-bottom: 4px; display: block; }
+  .form-input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; outline: none; font-family: inherit; transition: border 0.15s; }
+  .form-input:focus { border-color: #4285F4; }
+  .form-actions { display: flex; gap: 8px; margin-top: 18px; }
+  .btn-cancel { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #ddd; background: #fff; font-weight: 500; cursor: pointer; font-size: 14px; font-family: inherit; }
+  .btn-cancel:hover { background: #f5f5f5; }
+  .btn-save { flex: 2; padding: 10px; border-radius: 8px; border: none; background: #1a1a2e; color: #fff; font-weight: 600; cursor: pointer; font-size: 14px; font-family: inherit; }
+  .btn-save:hover { background: #2d2d4e; }
+
+  /* Settings */
+  .settings-tabs { display: flex; gap: 4px; background: #f0f0f4; border-radius: 8px; padding: 3px; margin-bottom: 20px; }
+  .settings-tab { flex: 1; border: none; border-radius: 6px; padding: 8px 12px; font-size: 13px; cursor: pointer; font-family: inherit; background: transparent; color: #555; font-weight: 500; transition: all 0.15s; text-align: center; }
+  .settings-tab.active { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-weight: 600; color: #1a1a2e; }
+  .settings-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #eee; border-radius: 10px; margin-bottom: 8px; transition: background 0.1s; }
+  .settings-item:hover { background: #fafafa; }
+  .settings-color-dot { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; border: 2px solid rgba(0,0,0,0.08); }
+  .settings-item-name { flex: 1; font-size: 14px; font-weight: 500; }
+  .settings-item-detail { font-size: 12px; color: #888; flex: 1; }
+  .settings-item-btn { border: none; background: none; cursor: pointer; font-size: 16px; color: #ccc; transition: color 0.15s; padding: 4px 6px; }
+  .settings-item-btn:hover { color: #E74C3C; }
+  .settings-add-row { display: flex; gap: 8px; margin-top: 12px; }
+  .settings-add-input { flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; outline: none; font-family: inherit; }
+  .settings-add-input:focus { border-color: #4285F4; }
+  .settings-add-btn { padding: 10px 18px; border-radius: 8px; border: none; background: #1a1a2e; color: #fff; font-weight: 600; cursor: pointer; font-size: 14px; font-family: inherit; white-space: nowrap; }
+  .settings-add-btn:hover { background: #2d2d4e; }
+  .settings-section-note { font-size: 12px; color: #999; margin-bottom: 12px; }
+  .settings-danger-zone { margin-top: 24px; padding-top: 18px; border-top: 1px solid #eee; }
+  .btn-danger { padding: 8px 16px; border-radius: 8px; border: 1px solid #fdd; background: #fff5f5; color: #c0392b; font-weight: 500; cursor: pointer; font-size: 13px; font-family: inherit; transition: all 0.15s; }
+  .btn-danger:hover { background: #fde8e8; border-color: #E74C3C; }
+</style>
+</head>
+<body>
+<div class="container" id="app"></div>
+
+<script>
+// ─── COLOR PALETTE for auto-assigning new people ───
+const COLOR_PALETTE = [
+  { bg:"#E8F0FE", border:"#4285F4", text:"#1a56db" },
+  { bg:"#FDE8E8", border:"#E74C3C", text:"#c0392b" },
+  { bg:"#E8F8E8", border:"#27AE60", text:"#1e8449" },
+  { bg:"#FFF3E0", border:"#F39C12", text:"#d68910" },
+  { bg:"#F3E8FD", border:"#8E44AD", text:"#6c3483" },
+  { bg:"#E0F7FA", border:"#00ACC1", text:"#00838F" },
+  { bg:"#FCE4EC", border:"#E91E63", text:"#AD1457" },
+  { bg:"#E8EAF6", border:"#3F51B5", text:"#283593" },
+  { bg:"#FFF8E1", border:"#FF8F00", text:"#E65100" },
+  { bg:"#E0F2F1", border:"#009688", text:"#00695C" },
+  { bg:"#F3E5F5", border:"#9C27B0", text:"#6A1B9A" },
+  { bg:"#E8F5E9", border:"#43A047", text:"#2E7D32" },
+  { bg:"#EFEBE9", border:"#795548", text:"#4E342E" },
+  { bg:"#ECEFF1", border:"#546E7A", text:"#37474F" },
+  { bg:"#FBE9E7", border:"#FF5722", text:"#BF360C" },
+];
+
+// ─── DEFAULTS ───
+const DEFAULT_PEOPLE = [];
+
+const DEFAULT_ENTRIES = [];
+
+const DEFAULT_HOLIDAYS = [];
+
+// ─── STATE ───
+let people = JSON.parse(localStorage.getItem("pto-people")) || DEFAULT_PEOPLE;
+let entries = JSON.parse(localStorage.getItem("pto-entries")) || DEFAULT_ENTRIES;
+let holidays = JSON.parse(localStorage.getItem("pto-holidays")) || DEFAULT_HOLIDAYS;
+let currentYear = new Date().getFullYear(), currentMonth = new Date().getMonth();
+let filter = "All";
+let viewMode = "month";
+
+function saveData() {
+  localStorage.setItem("pto-people", JSON.stringify(people));
+  localStorage.setItem("pto-entries", JSON.stringify(entries));
+  localStorage.setItem("pto-holidays", JSON.stringify(holidays));
+}
+
+function genId() { return "e" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function pad(n) { return String(n).padStart(2, "0"); }
+function dateStr(y, m, d) { return `${y}-${pad(m+1)}-${pad(d)}`; }
+function fmtDate(ds) {
+  const d = new Date(ds + "T12:00:00");
+  return d.toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric" });
+}
+function getColor(name) {
+  const p = people.find(x => x.name === name);
+  return p ? p.color : { bg:"#eee", border:"#999", text:"#333" };
+}
+function getPeopleNames() { return people.map(p => p.name); }
+
+function getEntriesForDate(ds) {
+  let e = entries.filter(x => x.date === ds);
+  if (filter !== "All") e = e.filter(x => x.person === filter);
+  return e;
+}
+function getHolidaysForDate(ds) { return holidays.filter(x => x.date === ds); }
+
+function getConflictDates() {
+  const byDate = {};
+  entries.forEach(e => { (byDate[e.date] = byDate[e.date] || []).push(e); });
+  const set = new Set();
+  Object.entries(byDate).forEach(([d, arr]) => { if (arr.length >= 2) set.add(d); });
+  return { set, byDate };
+}
+
+// ─── RENDER ───
+function render() {
+  const app = document.getElementById("app");
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
+  const { set: conflictDates, byDate } = getConflictDates();
+  const names = getPeopleNames();
+
+  let html = `
+    <div class="header">
+      <div>
+        <h1>🗓 Help Desk PTO</h1>
+        <p>Team time-off calendar</p>
+      </div>
+      <div class="header-buttons">
+        <button class="btn-settings" onclick="openSettings()">⚙ Settings</button>
+        <button class="btn-add" onclick="openModal()">+ Add Time Off</button>
+      </div>
+    </div>
+    <div class="toolbar">
+      <div class="pill-group">
+        ${["All", ...names].map(p => {
+          const c = p !== "All" ? getColor(p) : null;
+          const activeStyle = filter===p && c ? "color:"+c.text : "";
+          return `<button class="pill${filter===p?" active":""}" onclick="setFilter('${p.replace(/'/g,"\\'")}')" style="${activeStyle}">${p}</button>`;
+        }).join("")}
+      </div>
+      <div class="spacer"></div>
+      <div class="pill-group">
+        <button class="pill${viewMode==="month"?" active":""}" onclick="setView('month')">Month</button>
+        <button class="pill${viewMode==="list"?" active":""}" onclick="setView('list')">List</button>
+      </div>
+    </div>
+  `;
+
+  if (viewMode === "month") {
+    const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+    html += `
+      <div class="month-nav">
+        <button class="nav-btn" onclick="prevMonth()">‹</button>
+        <button class="nav-btn today" onclick="goToday()">Today</button>
+        <button class="nav-btn" onclick="nextMonth()">›</button>
+        <h2 class="month-title">${MONTHS[currentMonth]} ${currentYear}</h2>
+      </div>
+      <div class="cal-grid">
+        ${DOW.map(d => `<div class="cal-header">${d}</div>`).join("")}
+    `;
+
+    const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const prevDays = new Date(currentYear, currentMonth, 0).getDate();
+
+    for (let i = 0; i < firstDay; i++) {
+      html += `<div class="cal-cell outside"><div class="day-num outside">${prevDays - firstDay + 1 + i}</div></div>`;
+    }
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const ds = dateStr(currentYear, currentMonth, d);
+      const dayEntries = getEntriesForDate(ds);
+      const dayHolidays = getHolidaysForDate(ds);
+      const isToday = ds === todayStr;
+      const dow = (firstDay + d - 1) % 7;
+      const isWeekend = dow === 0 || dow === 6;
+      const hasConflict = conflictDates.has(ds) && filter === "All";
+
+      let cls = "cal-cell";
+      if (dayHolidays.length) cls += " holiday";
+      else if (isWeekend) cls += " weekend";
+      if (hasConflict) cls += " conflict";
+
+      html += `<div class="${cls}" onclick="openModal(null,'${ds}')">`;
+      html += `<div class="day-num${isToday ? " today" : ""}">${d}</div>`;
+
+      dayHolidays.forEach(h => {
+        html += `<div class="holiday-badge">🏢 ${h.name}</div>`;
+      });
+
+      dayEntries.forEach(e => {
+        const c = getColor(e.person);
+        const isHalf = e.hours.toLowerCase().includes("1/2");
+        const isPartial = !e.hours.toLowerCase().includes("all day") && !isHalf;
+        html += `<div class="badge" style="background:${c.bg};border-left-color:${c.border};color:${c.text}" onclick="event.stopPropagation();openModal('${e.id}')">
+          ${e.person}${isHalf ? ' <span style="opacity:0.7;font-weight:400">· ½</span>' : ""}${isPartial ? ' <span style="opacity:0.7;font-weight:400">· partial</span>' : ""}${e.notes ? ' <span style="opacity:0.6">✦</span>' : ""}
+          <span class="delete" onclick="event.stopPropagation();deleteEntry('${e.id}')">✕</span>
+        </div>`;
+      });
+
+      if (hasConflict && dayEntries.length >= 2) {
+        html += `<div class="conflict-warn">⚠ ${dayEntries.length} out</div>`;
+      }
+      html += `</div>`;
+    }
+
+    const totalCells = firstDay + daysInMonth;
+    const remaining = (7 - totalCells % 7) % 7;
+    for (let i = 1; i <= remaining; i++) {
+      html += `<div class="cal-cell outside"><div class="day-num outside">${i}</div></div>`;
+    }
+    html += `</div>`;
+
+    const prefix = `${currentYear}-${pad(currentMonth+1)}`;
+    const monthConflicts = [...conflictDates].filter(d => d.startsWith(prefix));
+    if (filter === "All" && monthConflicts.length > 0) {
+      html += `<div class="conflict-summary"><strong>⚠ Overlap days this month:</strong> `;
+      monthConflicts.forEach(d => {
+        const n = (byDate[d] || []).map(e => e.person).join(", ");
+        html += `<span style="margin-right:12px">${fmtDate(d)} (${n})</span>`;
+      });
+      html += `</div>`;
+    }
+  } else {
+    const upcoming = entries
+      .filter(e => e.date >= todayStr && (filter === "All" || e.person === filter))
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 20);
+
+    html += `<div class="list-container"><div class="list-header"><h3>Upcoming Time Off</h3></div>`;
+    if (upcoming.length === 0) {
+      html += `<div class="list-empty">No upcoming entries</div>`;
+    }
+    upcoming.forEach(e => {
+      const c = getColor(e.person);
+      const hol = holidays.find(h => h.date === e.date);
+      html += `<div class="list-row" onclick="openModal('${e.id}')">
+        <div class="list-bar" style="background:${c.border}"></div>
+        <div class="list-date">${fmtDate(e.date)}</div>
+        <div class="list-info">
+          <div class="list-name" style="color:${c.text}">${e.person}</div>
+          <div class="list-detail">${e.hours}${e.notes ? " · " + e.notes : ""}</div>
+        </div>
+        ${hol ? `<span class="list-tag" style="background:#FFF8E1;color:#7B6B00">Holiday</span>` : ""}
+        ${conflictDates.has(e.date) ? `<span style="font-size:10px;color:#d4a017;font-weight:600">⚠</span>` : ""}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  app.innerHTML = html;
+}
+
+// ─── ACTIONS ───
+function setFilter(f) { filter = f; render(); }
+function setView(v) { viewMode = v; render(); }
+function prevMonth() { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } render(); }
+function nextMonth() { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; } render(); }
+function goToday() { const t = new Date(); currentYear = t.getFullYear(); currentMonth = t.getMonth(); render(); }
+
+function deleteEntry(id) {
+  if (!confirm("Remove this time-off entry?")) return;
+  entries = entries.filter(e => e.id !== id);
+  saveData();
+  render();
+}
+
+function openModal(editId, defaultDate) {
+  const entry = editId ? entries.find(e => e.id === editId) : null;
+  const isEdit = !!entry;
+  const names = getPeopleNames();
+
+  if (names.length === 0) {
+    alert("Add team members first in Settings before adding time off.");
+    return;
+  }
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-bg";
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  const defaultVal = defaultDate || dateStr(currentYear, currentMonth, 1);
+
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>${isEdit ? "Edit Time Off" : "Add Time Off"}</h3>
+      <div class="form-group">
+        <label class="form-label">Person</label>
+        <select id="m-person" class="form-input">
+          ${names.map(p => `<option value="${p}"${entry && entry.person === p ? " selected" : ""}>${p}</option>`).join("")}
+        </select>
+      </div>
+      ${isEdit ? `
+        <div class="form-group">
+          <label class="form-label">Date</label>
+          <input type="date" id="m-date-start" class="form-input" value="${entry.date}">
+        </div>
+      ` : `
+        <div style="display:flex;gap:8px">
+          <div class="form-group" style="flex:1">
+            <label class="form-label">Start Date</label>
+            <input type="date" id="m-date-start" class="form-input" value="${defaultVal}">
+          </div>
+          <div class="form-group" style="flex:1">
+            <label class="form-label">End Date</label>
+            <input type="date" id="m-date-end" class="form-input" value="${defaultVal}">
+          </div>
+        </div>
+        <div id="m-range-info" style="font-size:12px;color:#888;margin-bottom:10px;"></div>
+        <div class="form-group">
+          <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="m-skip-weekends" checked> Skip weekends
+          </label>
+        </div>
+      `}
+      <div class="form-group">
+        <label class="form-label">Hours</label>
+        <select id="m-hours" class="form-input">
+          ${["All Day","1/2 Day AM","1/2 Day PM","Other"].map(h => `<option value="${h}"${entry && entry.hours === h ? " selected" : ""}>${h}</option>`).join("")}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes (optional)</label>
+        <input id="m-notes" class="form-input" value="${entry ? (entry.notes||"") : ""}" placeholder="Working partial, coverage notes, etc.">
+      </div>
+      <div class="form-actions">
+        <button class="btn-cancel" onclick="this.closest('.modal-bg').remove()">Cancel</button>
+        <button class="btn-save" id="m-save">${isEdit ? "Update" : "Add Entry"}</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  if (entry && !["All Day","1/2 Day AM","1/2 Day PM","Other"].includes(entry.hours)) {
+    document.getElementById("m-hours").value = "Other";
+  }
+
+  // Date range preview (new entries only)
+  if (!isEdit) {
+    function updateRangeInfo() {
+      const start = document.getElementById("m-date-start").value;
+      const end = document.getElementById("m-date-end").value;
+      const skip = document.getElementById("m-skip-weekends").checked;
+      const info = document.getElementById("m-range-info");
+      if (!start || !end) { info.textContent = ""; return; }
+      const days = getDateRange(start, end, skip);
+      if (days.length === 0) { info.textContent = "No days in range"; return; }
+      if (days.length === 1) { info.textContent = "1 day: " + fmtDate(days[0]); return; }
+      info.textContent = days.length + " days: " + fmtDate(days[0]) + " → " + fmtDate(days[days.length-1]);
+    }
+    document.getElementById("m-date-start").addEventListener("change", () => {
+      const startVal = document.getElementById("m-date-start").value;
+      const endEl = document.getElementById("m-date-end");
+      if (endEl.value < startVal) endEl.value = startVal;
+      updateRangeInfo();
+    });
+    document.getElementById("m-date-end").addEventListener("change", updateRangeInfo);
+    document.getElementById("m-skip-weekends").addEventListener("change", updateRangeInfo);
+    updateRangeInfo();
+  }
+
+  document.getElementById("m-save").onclick = () => {
+    const person = document.getElementById("m-person").value;
+    const startDate = document.getElementById("m-date-start").value;
+    let hours = document.getElementById("m-hours").value;
+    const notes = document.getElementById("m-notes").value;
+    if (!startDate) return;
+
+    if (isEdit) {
+      const idx = entries.findIndex(e => e.id === entry.id);
+      entries[idx] = { ...entries[idx], person, date: startDate, hours, notes };
+    } else {
+      const endEl = document.getElementById("m-date-end");
+      const endDate = endEl ? endEl.value : startDate;
+      const skip = document.getElementById("m-skip-weekends")?.checked ?? true;
+      const days = getDateRange(startDate, endDate || startDate, skip);
+      if (days.length === 0) { alert("No days in selected range."); return; }
+      days.forEach(d => {
+        entries.push({ id: genId(), person, date: d, hours, notes });
+      });
+    }
+    saveData();
+    overlay.remove();
+    render();
+  };
+}
+
+function getDateRange(startStr, endStr, skipWeekends) {
+  const dates = [];
+  const start = new Date(startStr + "T12:00:00");
+  const end = new Date(endStr + "T12:00:00");
+  if (isNaN(start) || isNaN(end) || start > end) return dates;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (!skipWeekends || (dow !== 0 && dow !== 6)) {
+      dates.push(`${cur.getFullYear()}-${pad(cur.getMonth()+1)}-${pad(cur.getDate())}`);
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
+// ─── SETTINGS PANEL ───
+function openSettings() {
+  let settingsTab = "people";
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-bg";
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  function renderSettings() {
+    const modal = overlay.querySelector(".modal");
+    let html = `
+      <h3>⚙ Settings</h3>
+      <div class="settings-tabs">
+        <button class="settings-tab${settingsTab==="people"?" active":""}" onclick="switchSettingsTab('people')">👥 Team Members</button>
+        <button class="settings-tab${settingsTab==="holidays"?" active":""}" onclick="switchSettingsTab('holidays')">🏢 Holidays</button>
+        <button class="settings-tab${settingsTab==="data"?" active":""}" onclick="switchSettingsTab('data')">💾 Data</button>
+      </div>
+    `;
+
+    if (settingsTab === "people") {
+      html += `<p class="settings-section-note">Add or remove team members. Colors are assigned automatically.</p>`;
+      people.forEach((p, i) => {
+        const entryCount = entries.filter(e => e.person === p.name).length;
+        html += `<div class="settings-item">
+          <div class="settings-color-dot" style="background:${p.color.bg};border-color:${p.color.border}"></div>
+          <div class="settings-item-name" style="color:${p.color.text}">${p.name}</div>
+          <div class="settings-item-detail">${entryCount} entr${entryCount===1?"y":"ies"}</div>
+          <button class="settings-item-btn" onclick="removePerson(${i})" title="Remove ${p.name}">✕</button>
+        </div>`;
+      });
+      html += `
+        <div class="settings-add-row">
+          <input class="settings-add-input" id="s-new-person" placeholder="New team member name..." onkeydown="if(event.key==='Enter')addPerson()">
+          <button class="settings-add-btn" onclick="addPerson()">+ Add</button>
+        </div>
+      `;
+    } else if (settingsTab === "holidays") {
+      html += `<p class="settings-section-note">Manage office holidays and early closures. These show in tan on the calendar.</p>`;
+      holidays.sort((a,b) => a.date.localeCompare(b.date)).forEach((h, i) => {
+        html += `<div class="settings-item">
+          <div style="font-size:18px;flex-shrink:0">🏢</div>
+          <div class="settings-item-name">${h.name}</div>
+          <div class="settings-item-detail">${fmtDate(h.date)}</div>
+          <button class="settings-item-btn" onclick="removeHoliday('${h.id}')" title="Remove">✕</button>
+        </div>`;
+      });
+      html += `
+        <div style="margin-top:12px;padding:12px;border:1px solid #eee;border-radius:10px;">
+          <div class="form-group">
+            <label class="form-label">Holiday Name</label>
+            <input class="form-input" id="s-hol-name" placeholder="e.g. Christmas Day, Early Close...">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date</label>
+            <input type="date" class="form-input" id="s-hol-date">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Note (optional)</label>
+            <input class="form-input" id="s-hol-note" placeholder="e.g. Office Holiday, Close at 1pm...">
+          </div>
+          <button class="settings-add-btn" style="width:100%;margin-top:4px" onclick="addHoliday()">+ Add Holiday</button>
+        </div>
+      `;
+    } else if (settingsTab === "data") {
+      html += `<p class="settings-section-note">Manage your calendar data. All data is stored in your browser's localStorage.</p>`;
+      html += `
+        <div class="settings-item" style="cursor:pointer" onclick="exportData()">
+          <div style="font-size:18px">📤</div>
+          <div class="settings-item-name">Export All Data</div>
+          <div class="settings-item-detail">Download as JSON backup</div>
+        </div>
+        <div class="settings-item" style="cursor:pointer" onclick="document.getElementById('import-file').click()">
+          <div style="font-size:18px">📥</div>
+          <div class="settings-item-name">Import Data</div>
+          <div class="settings-item-detail">Restore from JSON backup</div>
+          <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
+        </div>
+        <div class="settings-danger-zone">
+          <p class="settings-section-note" style="color:#c0392b;font-weight:600">Danger Zone</p>
+          <button class="btn-danger" onclick="resetAllData()">🗑 Reset All Data to Defaults</button>
+        </div>
+      `;
+    }
+
+    html += `<div class="form-actions"><button class="btn-cancel" style="flex:1" onclick="this.closest('.modal-bg').remove()">Close</button></div>`;
+    modal.innerHTML = html;
+  }
+
+  // Make tab switching available globally for this modal
+  window.switchSettingsTab = function(tab) {
+    settingsTab = tab;
+    renderSettings();
+  };
+
+  overlay.innerHTML = `<div class="modal"></div>`;
+  document.body.appendChild(overlay);
+  renderSettings();
+}
+
+function addPerson() {
+  const input = document.getElementById("s-new-person");
+  const name = input.value.trim();
+  if (!name) return;
+  if (people.find(p => p.name.toLowerCase() === name.toLowerCase())) {
+    alert("That name already exists.");
+    return;
+  }
+  const colorIdx = people.length % COLOR_PALETTE.length;
+  people.push({ name, color: COLOR_PALETTE[colorIdx] });
+  saveData();
+  // Re-render settings
+  window.switchSettingsTab("people");
+}
+
+function removePerson(idx) {
+  const name = people[idx].name;
+  const entryCount = entries.filter(e => e.person === name).length;
+  let msg = `Remove ${name} from the team?`;
+  if (entryCount > 0) msg += `\n\nThis will also remove their ${entryCount} time-off entr${entryCount===1?"y":"ies"}.`;
+  if (!confirm(msg)) return;
+  people.splice(idx, 1);
+  entries = entries.filter(e => e.person !== name);
+  if (filter === name) filter = "All";
+  saveData();
+  window.switchSettingsTab("people");
+  render();
+}
+
+function addHoliday() {
+  const name = document.getElementById("s-hol-name").value.trim();
+  const date = document.getElementById("s-hol-date").value;
+  const note = document.getElementById("s-hol-note").value.trim();
+  if (!name || !date) { alert("Please enter a name and date."); return; }
+  holidays.push({ id: genId(), date, name, note });
+  saveData();
+  window.switchSettingsTab("holidays");
+  render();
+}
+
+function removeHoliday(id) {
+  if (!confirm("Remove this holiday?")) return;
+  holidays = holidays.filter(h => h.id !== id);
+  saveData();
+  window.switchSettingsTab("holidays");
+  render();
+}
+
+function exportData() {
+  const data = JSON.stringify({ people, entries, holidays }, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "pto-calendar-backup.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data.people) people = data.people;
+      if (data.entries) entries = data.entries;
+      if (data.holidays) holidays = data.holidays;
+      saveData();
+      render();
+      alert("Data imported successfully!");
+      document.querySelector(".modal-bg")?.remove();
+    } catch(err) {
+      alert("Invalid file. Please use a JSON backup file.");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function resetAllData() {
+  if (!confirm("This will reset ALL data (people, entries, holidays) to the original defaults. Are you sure?")) return;
+  if (!confirm("Really sure? This cannot be undone.")) return;
+  people = JSON.parse(JSON.stringify(DEFAULT_PEOPLE));
+  entries = JSON.parse(JSON.stringify(DEFAULT_ENTRIES));
+  holidays = JSON.parse(JSON.stringify(DEFAULT_HOLIDAYS));
+  filter = "All";
+  saveData();
+  render();
+  document.querySelector(".modal-bg")?.remove();
+}
+
+// ─── INIT ───
+render();
+</script>
+</body>
+</html>

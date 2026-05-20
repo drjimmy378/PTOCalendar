@@ -119,6 +119,18 @@ import {
   onSnapshot,
   setDoc
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+const firebaseConfig = {
+  apiKey: "PASTE_HERE",
+  authDomain: "PASTE_HERE",
+  projectId: "PASTE_HERE",
+  storageBucket: "PASTE_HERE",
+  messagingSenderId: "PASTE_HERE",
+  appId: "PASTE_HERE"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+const calendarRef = doc(db, "ptoCalendars", "helpdesk"); 
 // ─── COLOR PALETTE for auto-assigning new people ───
 const COLOR_PALETTE = [
   { bg:"#E8F0FE", border:"#4285F4", text:"#1a56db" },

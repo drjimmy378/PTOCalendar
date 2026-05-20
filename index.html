@@ -158,9 +158,10 @@ const DEFAULT_ENTRIES = [];
 const DEFAULT_HOLIDAYS = [];
 
 // ─── STATE ───
-let people = JSON.parse(localStorage.getItem("pto-people")) || DEFAULT_PEOPLE;
-let entries = JSON.parse(localStorage.getItem("pto-entries")) || DEFAULT_ENTRIES;
-let holidays = JSON.parse(localStorage.getItem("pto-holidays")) || DEFAULT_HOLIDAYS;
+let people = DEFAULT_PEOPLE;
+let entries = DEFAULT_ENTRIES;
+let holidays = DEFAULT_HOLIDAYS;
+let isLoaded = false;
 let currentYear = new Date().getFullYear(), currentMonth = new Date().getMonth();
 let filter = "All";
 let viewMode = "month";
